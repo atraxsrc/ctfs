@@ -261,5 +261,4 @@ total 40
  794584 drwx------    2 root     root          4096 Jun 16 14:00 .ssh
  276913 -rw-r--r--    1 root     root            33 Sep 17 14:41 root.txt
  794661 drwxr-xr-x    3 root     root          4096 May 19 10:41 snap
-```
-cat root.txt
+
