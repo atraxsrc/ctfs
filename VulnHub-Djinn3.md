@@ -168,7 +168,7 @@ report it to admin
 ```
 
 ### Exploit Djinja2 template
-Searching for Werkzeug exploits on the Internet led me to this interestin [post](https://pequalsnp-team.github.io/cheatsheet/flask-jinja2-ssti) that says:
+Searching for Werkzeug exploits on the Internet led me to this interesting [post](https://pequalsnp-team.github.io/cheatsheet/flask-jinja2-ssti) that says:
 
 “You can try to probe {{7*'7'}} to see if the target is vulnerable. It would result in 49 in Twig, 7777777 in Jinja2, and neither if no template language is in use”
 
@@ -562,9 +562,9 @@ root@djinn3:/root# ./proof.sh
 djinn-3 pwned...
 __________________________________________________________________________
 
-Proof: VGhhbmsgeW91IGZvciB0cnlpbmcgZGppbm4zID0K
+Proof: ***
 Path: /root
-Date: Sun Sep 27 21:47:16 IST 2020
+Date: Sat OCT 30 11:47:16 2021
 Whoami: root
 __________________________________________________________________________
 ```
