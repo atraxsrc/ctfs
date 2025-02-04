@@ -180,6 +180,238 @@ volatility -f memory_dump.core linux_netstat
 - RHEL Security Guide: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/security_hardening/index
 - Ubuntu Security Guide: https://ubuntu.com/security/guides
 
+### Linux Malware Indicators
+
+#### Common Malware Characteristics
+1. File System Indicators
+   ```bash
+   # Check for files with unusual permissions in /tmp
+   find /tmp -type f -executable
+   
+   # Look for hidden directories with base64/hex names
+   find / -type d -name ".[a-zA-Z0-9]*" -ls
+   
+   # Search for files with common malware extensions
+   find / -type f \( -name "*.abc" -o -name "*.xmrig" -o -name "*.kinsing" \)
+   ```
+
+2. Process Indicators
+   ```bash
+   # Check for processes hiding with common names
+   ps aux | grep -E "(kworker|crond|sshd|apache|nginx)" | grep -v grep
+   
+   # Look for processes running from unusual directories
+   ps aux | awk '$11 ~ /^\/tmp|^\/var\/tmp|^\/dev\/shm/'
+   
+   # Monitor for crypto mining processes
+   ps aux | grep -E "(monero|stratum|xmrig|cryptonight)"
+   ```
+
+3. Network Indicators
+   ```bash
+   # Check for connections to known mining pools
+   netstat -ant | grep -E "(pool|mine|xmr|monero)"
+   
+   # Look for IRC connections (common in botnets)
+   netstat -ant | grep ":6667"
+   
+   # Monitor for unusual DNS queries
+   tcpdump -i any 'udp port 53' | grep -E "(\.cn$|\.ru$|\.bit$)"
+   ```
+
+### Advanced Log Analysis
+
+#### Log Correlation Techniques
+```bash
+# Create timeline of auth attempts and process creation
+awk '/sshd.*Failed|systemd.*COMMAND/' /var/log/auth.log /var/log/syslog | sort
+
+# Correlate successful logins with file access
+grep "session opened" /var/log/auth.log | \
+  while read line; do
+    user=$(echo $line | awk '{print $11}')
+    time=$(echo $line | awk '{print $1,$2,$3}')
+    find / -user $user -newermt "$time" -ls
+  done
+```
+
+#### Advanced Log Queries
+```bash
+# Find rapid succession login attempts
+awk '/Failed password/ {count[$11]++} END {for (ip in count) if (count[ip] > 10) print ip,count[ip]}' /var/log/auth.log
+
+# Detect privilege escalation
+awk '/sudo:.*COMMAND=/ {print $1,$2,$3,$6,$8,"Command="$(NF)}' /var/log/auth.log | sort | uniq -c
+
+# Track file system changes
+ausearch --start today --raw | \
+  aureport --file --summary
+```
+
+#### Log Analysis Tools Integration
+```bash
+# Use LogWatch for daily report
+logwatch --detail high --range today
+
+# Configure custom LogWatch filters
+cat > /etc/logwatch/conf/logfiles/custom.conf << EOF
+LogFile = /var/log/custom.log
+Archive = /var/log/custom.log.*
+EOF
+```
+
+### Automated Monitoring Scripts
+
+#### System Health Monitor
+```bash
+#!/bin/bash
+# health_monitor.sh
+# Monitors system health and sends alerts
+
+THRESHOLD_CPU=90
+THRESHOLD_MEM=90
+ALERT_EMAIL="security@example.com"
+
+while true; do
+    # CPU Usage
+    cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1)
+    
+    # Memory Usage
+    mem_usage=$(free | grep Mem | awk '{print $3/$2 * 100.0}')
+    
+    # Disk Usage
+    disk_usage=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+    
+    if [ "$cpu_usage" -gt "$THRESHOLD_CPU" ] || \
+       [ "$mem_usage" -gt "$THRESHOLD_MEM" ]; then
+        echo "Alert: High resource usage detected" | \
+        mail -s "System Alert" "$ALERT_EMAIL"
+    fi
+    
+    sleep 300
+done
+```
+
+#### Suspicious Process Monitor
+```bash
+#!/bin/bash
+# process_monitor.sh
+# Monitors for suspicious processes
+
+SUSPICIOUS_PATHS=(/tmp /dev/shm /var/tmp)
+LOG_FILE="/var/log/process_monitor.log"
+
+check_suspicious_processes() {
+    for path in "${SUSPICIOUS_PATHS[@]}"; do
+        ps aux | awk -v path="$path" '$11 ~ path {print $1,$2,$11,$12}' >> "$LOG_FILE"
+    done
+}
+
+while true; do
+    check_suspicious_processes
+    sleep 60
+done
+```
+
+#### Network Connection Monitor
+```bash
+#!/bin/bash
+# connection_monitor.sh
+# Monitors for suspicious network connections
+
+SUSPICIOUS_PORTS=(4444 5555 6666 6667 8080)
+LOG_FILE="/var/log/connection_monitor.log"
+
+monitor_connections() {
+    for port in "${SUSPICIOUS_PORTS[@]}"; do
+        netstat -ant | grep ":$port " >> "$LOG_FILE"
+    done
+    
+    # Check for high number of concurrent connections
+    netstat -ant | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | \
+        awk '$1 > 100' >> "$LOG_FILE"
+}
+
+while true; do
+    monitor_connections
+    sleep 300
+done
+```
+
+### Lynis Integration
+
+#### Installation and Basic Usage
+```bash
+# Install Lynis
+# For RHEL/CentOS
+yum install lynis
+
+# For Ubuntu
+apt install lynis
+
+# Run basic system audit
+lynis audit system
+
+# Generate detailed report
+lynis audit system --quick > /var/log/lynis-report.txt
+```
+
+#### Custom Lynis Profiles
+```bash
+# Create custom profile
+cat > /etc/lynis/custom.prf << EOF
+# Skip specific tests
+skip-test=BOOT-5122
+skip-test=AUTH-9288
+
+# Custom warning thresholds
+warning=authentication
+warning=filesystems
+warning=storage
+EOF
+
+# Run audit with custom profile
+lynis audit system --profile /etc/lynis/custom.prf
+```
+
+#### Automated Lynis Scanning
+```bash
+#!/bin/bash
+# lynis_automated.sh
+# Performs automated Lynis scans and reports changes
+
+REPORT_DIR="/var/log/lynis-reports"
+DATE=$(date +%Y-%m-%d)
+REPORT="$REPORT_DIR/lynis-report-$DATE.txt"
+DIFF_REPORT="$REPORT_DIR/lynis-diff-$DATE.txt"
+
+# Run Lynis audit
+lynis audit system --quick > "$REPORT"
+
+# Compare with previous report
+if [ -f "$REPORT_DIR/lynis-report-$(date -d "yesterday" +%Y-%m-%d).txt" ]; then
+    diff "$REPORT_DIR/lynis-report-$(date -d "yesterday" +%Y-%m-%d).txt" "$REPORT" > "$DIFF_REPORT"
+fi
+
+# Parse and alert on critical findings
+grep "Warning:" "$REPORT" | mail -s "Lynis Warnings - $DATE" security@example.com
+```
+
+#### Lynis Integration with Security Tools
+```bash
+# Integration with auditd
+auditctl -w /usr/sbin/lynis -p x -k lynis_execution
+
+# Integration with OSSEC
+cat > /var/ossec/etc/ossec.conf << EOF
+<localfile>
+    <log_format>full_command</log_format>
+    <command>lynis audit system --quick</command>
+    <frequency>86400</frequency>
+</localfile>
+EOF
+```
+
 ### Best Practices
 1. Maintain accurate system baselines
 2. Regular log rotation and archival
