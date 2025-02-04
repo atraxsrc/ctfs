@@ -1,0 +1,192 @@
+# Linux Threat Hunting Guide
+## For RHEL and Ubuntu Systems
+
+### Introduction
+This guide provides systematic approaches and commands for threat hunting on Linux systems, specifically focusing on RHEL and Ubuntu distributions. It covers system analysis, log inspection, process monitoring, and network connection examination.
+
+### System Baseline Analysis
+
+#### User Activity and Authentication
+```bash
+# Review successful and failed login attempts
+journalctl -u systemd-logind
+last -f /var/log/wtmp
+lastb -f /var/log/btmp
+
+# Examine SSH access logs
+grep "sshd" /var/log/auth.log    # Ubuntu
+grep "sshd" /var/log/secure      # RHEL
+
+# Check sudo usage
+grep "sudo" /var/log/auth.log    # Ubuntu
+grep "sudo" /var/log/secure      # RHEL
+```
+
+#### Process Analysis
+```bash
+# List all running processes with full details
+ps auxf
+
+# Check processes without TTY
+ps aux | grep -v TTY
+
+# Examine process trees for unusual parent-child relationships
+pstree -p
+
+# Monitor process creation in real-time
+auditctl -w /bin -p x -k process_creation
+ausearch -k process_creation
+```
+
+#### File System Analysis
+```bash
+# Find recently modified files
+find / -type f -mtime -1 -ls
+
+# Look for files with SUID/SGID bits
+find / -type f \( -perm -4000 -o -perm -2000 \) -ls
+
+# Check for hidden files and directories
+find / -name ".*" -ls
+
+# Monitor file system changes in real-time
+auditctl -w /etc -p wa -k system_files
+ausearch -k system_files
+```
+
+### Network Analysis
+
+#### Connection Monitoring
+```bash
+# List all network connections
+ss -tupln
+netstat -tupln
+
+# Monitor network connections in real-time
+watch -n 1 'netstat -tupln'
+
+# Check for listening ports
+lsof -i -P -n | grep LISTEN
+```
+
+#### Suspicious Network Activity
+```bash
+# Check for unusual outbound connections
+tcpdump -i any 'tcp[tcpflags] & (tcp-syn) != 0'
+
+# Monitor DNS queries
+tcpdump -i any 'udp port 53'
+
+# Track connection attempts to common C2 ports
+tcpdump 'tcp port 4444 or tcp port 5555'
+```
+
+### Memory Analysis
+
+#### Memory Usage Inspection
+```bash
+# Check system memory usage
+free -m
+vmstat 1
+
+# Monitor process memory usage
+top -o %MEM
+ps aux --sort=-%mem | head -n 10
+```
+
+#### Memory Dump Analysis
+```bash
+# Create memory dump of suspicious process
+gcore -o memory_dump [PID]
+
+# Use volatility for memory forensics (if installed)
+volatility -f memory_dump.core linux_pslist
+volatility -f memory_dump.core linux_netstat
+```
+
+### Common Indicators of Compromise (IoCs)
+
+1. Unusual Process Behavior
+   - High CPU/memory usage from unexpected processes
+   - Processes running from temporary directories
+   - Processes with randomized names
+   - Unexpected child processes
+
+2. Suspicious File Activity
+   - Executables in /tmp or /var/tmp
+   - Modified system binaries
+   - Unexpected cronjobs
+   - Hidden directories and files
+
+3. Network Anomalies
+   - Connections to unknown IP addresses
+   - Unusual ports in LISTEN state
+   - High volume of DNS queries
+   - Unexpected outbound connections
+
+### Response Actions
+
+1. Immediate Containment
+   ```bash
+   # Kill suspicious process
+   kill -9 [PID]
+   
+   # Block suspicious IP
+   iptables -A INPUT -s [IP_ADDRESS] -j DROP
+   
+   # Disable user account
+   usermod -L [USERNAME]
+   ```
+
+2. Evidence Collection
+   ```bash
+   # Capture process details
+   ps auxf > process_snapshot.txt
+   
+   # Copy suspicious files
+   cp -p [SUSPICIOUS_FILE] /evidence/
+   
+   # Create network capture
+   tcpdump -w evidence.pcap -i any
+   ```
+
+### Regular Monitoring Tasks
+
+#### Daily Checks
+- Review authentication logs
+- Check for new user accounts
+- Monitor system resource usage
+- Inspect network connections
+
+#### Weekly Tasks
+- Review installed packages
+- Check for modified system files
+- Analyze user login patterns
+- Review sudo usage logs
+
+### Distribution-Specific Notes
+
+#### RHEL Systems
+- Use `yum check-update` for package verification
+- Monitor SELinux alerts in `/var/log/audit/audit.log`
+- Check RPM package integrity with `rpm -Va`
+
+#### Ubuntu Systems
+- Use `apt list --installed` for package verification
+- Monitor AppArmor events in `/var/log/kern.log`
+- Check package integrity with `debsums`
+
+### Additional Resources
+- RHEL Security Guide: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/security_hardening/index
+- Ubuntu Security Guide: https://ubuntu.com/security/guides
+
+### Best Practices
+1. Maintain accurate system baselines
+2. Regular log rotation and archival
+3. Document all investigative steps
+4. Keep tools and signatures updated
+5. Regular system updates and patches
+6. Network segmentation and monitoring
+7. Regular backup verification
+
+Remember to adapt these procedures based on your specific environment and security requirements. Always follow your organization's security policies and procedures when conducting threat hunting activities.
